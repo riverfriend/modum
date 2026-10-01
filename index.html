@@ -48,13 +48,8 @@
         .food-card-hover:hover {
             transform: translateY(-4px);
         }
-        .presentation-mode { background: #0f172a !important; }
-        .presentation-mode #root { background: #0f172a; }
-        .presentation-mode .teacher-result-card { padding: 1.5rem; border-width: 3px; }
-        .teacher-result-card .student-name { font-size: 1.2rem; font-weight: 800; padding: .4rem .6rem; }
-        .teacher-result-card .student-move-select { font-size: .75rem; font-weight: 700; }
-        .presentation-mode .teacher-result-card .student-name { font-size: clamp(1.5rem, 2.7vw, 2.4rem); font-weight: 800; padding: .45rem .7rem; }
-        .presentation-mode .teacher-result-card h3 { font-size: clamp(1.2rem, 2vw, 1.8rem); }
+        .teacher-result-card .student-name { font-size: 1.35rem; font-weight: 800; padding: .45rem .65rem; white-space: nowrap; line-height: 1.2; }
+        .teacher-result-card .student-move-button { font-size: .7rem; font-weight: 800; white-space: nowrap; }
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -424,7 +419,6 @@
             const [hostedRooms, setHostedRooms] = useState(() => getHostedRooms());
             const [hostedInfo, setHostedInfo] = useState({});   // {code: {title, createdAt, exists, joined}}
             const [deleting, setDeleting] = useState(false);
-            const [presentationMode, setPresentationMode] = useState(false);
 
             const fbRef = useRef(null);
             const isTeacherRef = useRef(false);
@@ -432,10 +426,6 @@
             const toastTimerRef = useRef(null);
             const revealCelebratedRef = useRef(false);
 
-            useEffect(() => {
-                document.body.classList.toggle('presentation-mode', presentationMode && isTeacher);
-                return () => document.body.classList.remove('presentation-mode');
-            }, [presentationMode, isTeacher]);
 
 
             useEffect(() => {
@@ -1092,6 +1082,13 @@
                 teacherWrite(`rooms/${roomId}/state`, { selectionOpen: true, isLocked: false }, "학생들의 모둠 선택을 시작했습니다.");
             };
 
+            const handleChooseMove = (uid) => {
+                if (!roomData || !roomData.participants[uid]) return;
+                const choices = roomData.menus.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
+                const picked = Number(window.prompt(`이동할 모둠 번호를 입력하세요.\n\n${choices}`));
+                if (Number.isInteger(picked) && picked >= 1 && picked <= roomData.menus.length) handleMoveParticipant(uid, picked - 1);
+            };
+
             const handleMoveParticipant = (uid, targetMenuIndex) => {
                 if (!isTeacher || !roomData || !roomData.participants[uid]) return;
                 const target = roomData.menus[targetMenuIndex];
@@ -1542,7 +1539,6 @@
                                         >
                                             📋 결과 복사
                                         </button>
-                                        <button onClick={() => setPresentationMode((v) => !v)} className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/30 transition">📺 {presentationMode ? '일반 화면' : '큰 화면 보기'}</button>
                                         <button
                                             onClick={handleToggleLock}
                                             className={`font-bold text-xs px-3 py-2 rounded-xl transition ${roomData.isLocked ? 'bg-white text-slate-800 hover:bg-slate-100' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}
@@ -1635,10 +1631,8 @@
                                                         <div className="flex flex-wrap gap-1.5">
                                                             {members.map((m) => (
                                                                 <span key={m.uid} className="student-name text-xs pl-2.5 pr-1 py-1 rounded-lg font-medium flex items-center gap-1 bg-slate-100 text-slate-700">
-                                                                    <span>{m.name}</span>
-                                                                    <select value={m.menuIndex} onChange={(e) => handleMoveParticipant(m.uid, Number(e.target.value))} className="student-move-select max-w-[8rem] bg-transparent focus:outline-none" title="다른 모둠으로 이동">
-                                                                        {roomData.menus.map((option, optionIndex) => <option key={optionIndex} value={optionIndex}>{option.name}</option>)}
-                                                                    </select>
+                                                                    <span className="student-name">{m.name}</span>
+                                                                    <button onClick={() => handleChooseMove(m.uid)} className="student-move-button ml-1 px-2 py-1 rounded-md bg-white border border-slate-300 text-slate-600 hover:bg-slate-50" title="다른 모둠으로 이동">이동</button>
                                                                     <button
                                                                         onClick={() => handleRemoveParticipant(m.uid)}
                                                                         title="선택 취소"
