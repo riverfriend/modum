@@ -1082,12 +1082,6 @@
                 teacherWrite(`rooms/${roomId}/state`, { selectionOpen: true, isLocked: false }, "학생들의 모둠 선택을 시작했습니다.");
             };
 
-            const handleUpdateCapacity = (menuIndex, value) => {
-                if (!isTeacher || !roomData) return;
-                const limit = Math.max(1, Math.min(99, Number.parseInt(value, 10) || 1));
-                teacherWrite(`rooms/${roomId}/meta/menus/${menuIndex}/limit`, limit, `${roomData.menus[menuIndex].name} 정원을 ${limit}명으로 변경했습니다.`);
-            };
-
             const handleChooseMove = (uid) => {
                 if (!roomData || !roomData.participants[uid]) return;
                 const choices = roomData.menus.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
@@ -1099,22 +1093,13 @@
                 if (!isTeacher || !roomData || !roomData.participants[uid]) return;
                 const target = roomData.menus[targetMenuIndex];
                 if (!target) return;
-                const targetMembers = getMembers(roomData, targetMenuIndex).filter((m) => m.uid !== uid);
-                if (targetMembers.length >= target.limit) {
-                    const choices = targetMembers.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
-                    const picked = Number(window.prompt(`'${target.name}'은 정원이 가득 찼습니다.\n바꿀 학생의 번호를 입력하세요.\n\n${choices}`));
-                    const swap = targetMembers[picked - 1];
-                    if (!swap) { showToast('교환할 학생 번호를 확인해 주세요.', 'error'); return; }
-                    const oldMenuIndex = roomData.participants[uid].menuIndex;
-                    teacherWrite(`rooms/${roomId}`, {
-                        [`state/seats/${uid}`]: targetMenuIndex,
-                        [`members/${uid}/menuIndex`]: targetMenuIndex,
-                        [`state/seats/${swap.uid}`]: oldMenuIndex,
-                        [`members/${swap.uid}/menuIndex`]: oldMenuIndex
-                    }, `${roomData.participants[uid].name} 학생과 ${swap.name} 학생의 모둠을 교환했습니다.`);
-                    return;
-                }
-                teacherWrite(`rooms/${roomId}`, { [`state/seats/${uid}`]: targetMenuIndex, [`members/${uid}/menuIndex`]: targetMenuIndex }, `${roomData.participants[uid].name} 학생을 이동했습니다.`);
+                const targetCount = getMembers(roomData, targetMenuIndex).filter((m) => m.uid !== uid).length + 1;
+                const updates = {
+                    [`state/seats/${uid}`]: targetMenuIndex,
+                    [`members/${uid}/menuIndex`]: targetMenuIndex
+                };
+                if (targetCount > target.limit) updates[`meta/menus/${targetMenuIndex}/limit`] = targetCount;
+                teacherWrite(`rooms/${roomId}`, updates, `${roomData.participants[uid].name} 학생을 ${target.name}(으)로 이동했습니다.${targetCount > target.limit ? ` 정원을 ${targetCount}명으로 늘렸습니다.` : ''}`);
             };
 
             const handleAddParticipant = (targetMenuIndex) => {
@@ -1122,9 +1107,14 @@
                 const clean = String(window.prompt('추가할 학생 이름을 입력하세요.') || '').trim().slice(0, 20);
                 if (!clean) return;
                 const target = roomData.menus[targetMenuIndex];
-                if (getMembers(roomData, targetMenuIndex).length >= target.limit) { showToast(`'${target.name}'의 정원이 가득 찼습니다.`, "error"); return; }
+                const targetCount = getMembers(roomData, targetMenuIndex).length + 1;
                 const uid = `teacher_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-                teacherWrite(`rooms/${roomId}`, { [`state/seats/${uid}`]: targetMenuIndex, [`members/${uid}`]: { name: clean, menuIndex: targetMenuIndex, joinedAt: Date.now(), addedByTeacher: true } }, `${clean} 학생을 추가했습니다.`);
+                const updates = {
+                    [`state/seats/${uid}`]: targetMenuIndex,
+                    [`members/${uid}`]: { name: clean, menuIndex: targetMenuIndex, joinedAt: Date.now(), addedByTeacher: true }
+                };
+                if (targetCount > target.limit) updates[`meta/menus/${targetMenuIndex}/limit`] = targetCount;
+                teacherWrite(`rooms/${roomId}`, updates, `${clean} 학생을 추가했습니다.${targetCount > target.limit ? ` 정원을 ${targetCount}명으로 늘렸습니다.` : ''}`);
             };
 
             const handleToggleReveal = () => {
@@ -1622,10 +1612,7 @@
                                                         <div className="text-4xl p-2 bg-slate-50 rounded-2xl border border-slate-100">{menu.emoji}</div>
                                                         <div>
                                                             <h3 className="font-bold text-slate-800 text-base">{menu.name}</h3>
-                                                            <label className="mt-1 flex items-center gap-1 text-xs font-semibold text-slate-500">
-                                                                정원:
-                                                                <input type="number" min="1" max="99" defaultValue={menu.limit} onBlur={(e) => handleUpdateCapacity(idx, e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} className="w-14 rounded-md border border-slate-300 px-1.5 py-0.5 text-center font-bold text-slate-700 focus:border-orange-500 focus:outline-none" aria-label={`${menu.name} 정원`} />명
-                                                            </label>
+                                                            <span className="text-xs font-semibold text-slate-500">정원: {menu.limit}명</span>
                                                         </div>
                                                     </div>
                                                     <span className={`text-xs font-extrabold px-2.5 py-1 rounded-full ${isFull ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
