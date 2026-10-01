@@ -51,7 +51,9 @@
         .presentation-mode { background: #0f172a !important; }
         .presentation-mode #root { background: #0f172a; }
         .presentation-mode .teacher-result-card { padding: 1.5rem; border-width: 3px; }
-        .presentation-mode .teacher-result-card .student-name { font-size: clamp(1.35rem, 2.7vw, 2.4rem); font-weight: 800; padding: .35rem .6rem; }
+        .teacher-result-card .student-name { font-size: 1.2rem; font-weight: 800; padding: .4rem .6rem; }
+        .teacher-result-card .student-move-select { font-size: .75rem; font-weight: 700; }
+        .presentation-mode .teacher-result-card .student-name { font-size: clamp(1.5rem, 2.7vw, 2.4rem); font-weight: 800; padding: .45rem .7rem; }
         .presentation-mode .teacher-result-card h3 { font-size: clamp(1.2rem, 2vw, 1.8rem); }
         ::-webkit-scrollbar {
             width: 6px;
@@ -1093,8 +1095,22 @@
             const handleMoveParticipant = (uid, targetMenuIndex) => {
                 if (!isTeacher || !roomData || !roomData.participants[uid]) return;
                 const target = roomData.menus[targetMenuIndex];
-                const count = getMembers(roomData, targetMenuIndex).filter((m) => m.uid !== uid).length;
-                if (!target || count >= target.limit) { showToast(`'${target ? target.name : '모둠'}'의 정원이 가득 찼습니다.`, "error"); return; }
+                if (!target) return;
+                const targetMembers = getMembers(roomData, targetMenuIndex).filter((m) => m.uid !== uid);
+                if (targetMembers.length >= target.limit) {
+                    const choices = targetMembers.map((m, i) => `${i + 1}. ${m.name}`).join('\n');
+                    const picked = Number(window.prompt(`'${target.name}'은 정원이 가득 찼습니다.\n바꿀 학생의 번호를 입력하세요.\n\n${choices}`));
+                    const swap = targetMembers[picked - 1];
+                    if (!swap) { showToast('교환할 학생 번호를 확인해 주세요.', 'error'); return; }
+                    const oldMenuIndex = roomData.participants[uid].menuIndex;
+                    teacherWrite(`rooms/${roomId}`, {
+                        [`state/seats/${uid}`]: targetMenuIndex,
+                        [`members/${uid}/menuIndex`]: targetMenuIndex,
+                        [`state/seats/${swap.uid}`]: oldMenuIndex,
+                        [`members/${swap.uid}/menuIndex`]: oldMenuIndex
+                    }, `${roomData.participants[uid].name} 학생과 ${swap.name} 학생의 모둠을 교환했습니다.`);
+                    return;
+                }
                 teacherWrite(`rooms/${roomId}`, { [`state/seats/${uid}`]: targetMenuIndex, [`members/${uid}/menuIndex`]: targetMenuIndex }, `${roomData.participants[uid].name} 학생을 이동했습니다.`);
             };
 
@@ -1619,8 +1635,9 @@
                                                         <div className="flex flex-wrap gap-1.5">
                                                             {members.map((m) => (
                                                                 <span key={m.uid} className="student-name text-xs pl-2.5 pr-1 py-1 rounded-lg font-medium flex items-center gap-1 bg-slate-100 text-slate-700">
-                                                                    <select value={m.menuIndex} onChange={(e) => handleMoveParticipant(m.uid, Number(e.target.value))} className="max-w-[8rem] bg-transparent font-semibold focus:outline-none" title="다른 모둠으로 이동">
-                                                                        {roomData.menus.map((option, optionIndex) => <option key={optionIndex} value={optionIndex}>{m.name} · {option.name}</option>)}
+                                                                    <span>{m.name}</span>
+                                                                    <select value={m.menuIndex} onChange={(e) => handleMoveParticipant(m.uid, Number(e.target.value))} className="student-move-select max-w-[8rem] bg-transparent focus:outline-none" title="다른 모둠으로 이동">
+                                                                        {roomData.menus.map((option, optionIndex) => <option key={optionIndex} value={optionIndex}>{option.name}</option>)}
                                                                     </select>
                                                                     <button
                                                                         onClick={() => handleRemoveParticipant(m.uid)}
