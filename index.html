@@ -1,0 +1,1833 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>맛있는 음식 모둠 편성기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- 학생 링크 QR 코드 생성용 -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<!-- Firebase Realtime Database (index (2).html 과 같은 프로젝트) : 모든 기기가 서버를 거쳐 동기화됨 -->
+<script>
+    /* Firebase 콘솔 → 프로젝트 설정 → 내 앱 → firebaseConfig (databaseURL 포함) */
+    window.FIREBASE_CONFIG = {
+        apiKey: "AIzaSyBFmPIzoXDzfII1cT8i9Ldin_qsVgdncIk",
+        authDomain: "team-3f70c.firebaseapp.com",
+        databaseURL: "https://team-3f70c-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "team-3f70c",
+        storageBucket: "team-3f70c.firebasestorage.app",
+        messagingSenderId: "862495699710",
+        appId: "1:862495699710:web:17510a141560c30c2dabaf"
+    };
+    window.__fbReady = (async () => {
+        const V = '10.12.5';
+        const appMod = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-app.js`);
+        const dbMod = await import(`https://www.gstatic.com/firebasejs/${V}/firebase-database.js`);
+        const cfg = window.FIREBASE_CONFIG;
+        if (!cfg || !cfg.apiKey || !cfg.databaseURL) throw new Error('FIREBASE_CONFIG에 apiKey 또는 databaseURL이 없습니다.');
+        const app = appMod.initializeApp(cfg, 'food-group-maker');
+        return { ...dbMod, db: dbMod.getDatabase(app) };
+    })();
+    window.__fbReady.catch((e) => console.warn('Firebase 로드 실패:', e));
+</script>
+
+    
+    <style>
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: #f8fafc;
+        }
+        .food-card-hover {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .food-card-hover:hover {
+            transform: translateY(-4px);
+        }
+        .presentation-mode { background: #0f172a !important; }
+        .presentation-mode #root { background: #0f172a; }
+        .presentation-mode .teacher-result-card { padding: 1.5rem; border-width: 3px; }
+        .presentation-mode .teacher-result-card .student-name { font-size: clamp(1.35rem, 2.7vw, 2.4rem); font-weight: 800; padding: .35rem .6rem; }
+        .presentation-mode .teacher-result-card h3 { font-size: clamp(1.2rem, 2vw, 1.8rem); }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 9999px;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen">
+    <div id="root"></div>
+
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const FOOD_PRESETS = [
+            { name: "피자 모둠", emoji: "🍕", bg: "bg-amber-50 border-amber-300 text-amber-800", badge: "bg-amber-500" },
+            { name: "햄버거 모둠", emoji: "🍔", bg: "bg-orange-50 border-orange-300 text-orange-800", badge: "bg-orange-500" },
+            { name: "치킨 모둠", emoji: "🍗", bg: "bg-yellow-50 border-yellow-300 text-yellow-800", badge: "bg-yellow-500" },
+            { name: "떡볶이 모둠", emoji: "🥘", bg: "bg-red-50 border-red-300 text-red-800", badge: "bg-red-500" },
+            { name: "초밥 모둠", emoji: "🍣", bg: "bg-emerald-50 border-emerald-300 text-emerald-800", badge: "bg-emerald-500" },
+            { name: "라면 모둠", emoji: "🍜", bg: "bg-rose-50 border-rose-300 text-rose-800", badge: "bg-rose-500" },
+            { name: "아이스크림 모둠", emoji: "🍦", bg: "bg-purple-50 border-purple-300 text-purple-800", badge: "bg-purple-500" },
+            { name: "디저트 모둠", emoji: "🍩", bg: "bg-pink-50 border-pink-300 text-pink-800", badge: "bg-pink-500" },
+            { name: "타코 모둠", emoji: "🌮", bg: "bg-lime-50 border-lime-300 text-lime-800", badge: "bg-lime-500" },
+            { name: "스테이크 모둠", emoji: "🥩", bg: "bg-stone-50 border-stone-300 text-stone-800", badge: "bg-stone-500" }
+        ];
+
+        const Toast = ({ message, type, onClose }) => {
+            if (!message) return null;
+            return (
+                <div className="fixed top-5 right-5 z-50 flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg bg-slate-900 text-white text-sm font-medium animate-bounce">
+                    <span>{type === 'error' ? '⚠️' : '✅'}</span>
+                    <span>{message}</span>
+                    <button onClick={onClose} className="ml-2 text-slate-400 hover:text-white">✕</button>
+                </div>
+            );
+        };
+
+
+        const MAX_MENUS = 9;                 // 만들 수 있는 최대 모둠 수
+        const studentUrl = (code) => `${window.location.origin}${window.location.pathname}?room=${code}`;
+        const qrFallbackUrl = (url, size) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=10&data=${encodeURIComponent(url)}`;
+
+        // 학생 링크 QR 코드 창
+        const QrModal = ({ url, code, title, onClose, onCopy }) => {
+            const canvasRef = useRef(null);
+            const [big, setBig] = useState(false);
+            const [mode, setMode] = useState(() => (window.qrcode ? 'canvas' : 'fallback'));
+            const isFile = window.location.protocol === 'file:';
+
+            useEffect(() => {
+                const onKey = (e) => {
+                    if (e.key !== 'Escape') return;
+                    if (big) setBig(false);
+                    else onClose();
+                };
+                window.addEventListener('keydown', onKey);
+                return () => window.removeEventListener('keydown', onKey);
+            }, [big, onClose]);
+
+            useEffect(() => {
+                if (mode !== 'canvas') return;
+                const cv = canvasRef.current;
+                if (!cv) return;
+                try {
+                    const qr = window.qrcode(0, 'M');
+                    qr.addData(url);
+                    qr.make();
+                    const n = qr.getModuleCount();
+                    const margin = 4;
+                    const cell = 12;
+                    const size = (n + margin * 2) * cell;
+                    cv.width = size;
+                    cv.height = size;
+                    const ctx = cv.getContext('2d');
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, size, size);
+                    ctx.fillStyle = '#000000';
+                    for (let r = 0; r < n; r++) {
+                        for (let c = 0; c < n; c++) {
+                            if (qr.isDark(r, c)) ctx.fillRect((c + margin) * cell, (r + margin) * cell, cell, cell);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('QR 생성 실패, 대체 방식 사용:', e);
+                    setMode('fallback');
+                }
+            }, [url, mode]);
+
+            const handleDownload = () => {
+                if (mode === 'canvas' && canvasRef.current) {
+                    const a = document.createElement('a');
+                    a.href = canvasRef.current.toDataURL('image/png');
+                    a.download = `모둠방_${code}_QR.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                } else {
+                    window.open(qrFallbackUrl(url, 600), '_blank');
+                }
+            };
+
+            const qrClass = big ? 'w-[min(80vh,90vw)] h-[min(80vh,90vw)]' : 'w-64 h-64';
+            return (
+                <div className="fixed inset-0 z-50 bg-slate-900/70 flex items-center justify-center p-4" onClick={onClose}>
+                    <div
+                        className={`bg-white rounded-3xl shadow-xl text-center relative ${big ? 'w-full h-full flex flex-col items-center justify-center p-4' : 'w-full max-w-sm p-6'}`}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button onClick={onClose} className="absolute top-3 right-4 text-slate-400 hover:text-slate-700 text-xl" title="닫기 (ESC)">✕</button>
+                        <div className="text-xs font-bold text-orange-600 mb-1">학생 입장용 QR 코드</div>
+                        <div className={`font-extrabold text-slate-800 mb-3 ${big ? 'text-3xl' : 'text-lg'}`}>{title}</div>
+                        <div className="mx-auto">
+                            {mode === 'canvas' ? (
+                                <canvas ref={canvasRef} className={`${qrClass} mx-auto border border-slate-200 rounded-xl`} style={{ imageRendering: 'pixelated' }} />
+                            ) : (
+                                <img src={qrFallbackUrl(url, 600)} alt="학생 링크 QR 코드" className={`${qrClass} mx-auto border border-slate-200 rounded-xl`} />
+                            )}
+                        </div>
+                        <div className={`mt-3 text-slate-500 ${big ? 'text-xl' : 'text-xs'}`}>
+                            방 코드 <strong className={`font-mono text-orange-600 tracking-widest ${big ? 'text-5xl' : 'text-2xl'}`}>{code}</strong>
+                        </div>
+                        {!big && (
+                            <div className="mt-2 text-[11px] text-slate-400 break-all">{url}</div>
+                        )}
+                        {isFile && (
+                            <div className="mt-3 text-[11px] text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 text-left">
+                                지금은 컴퓨터에 저장된 파일(file://)로 열려 있어 학생 기기에서 이 QR 링크가 열리지 않습니다. 웹 주소(GitHub Pages, Netlify 등)에 올린 뒤 사용해 주세요.
+                            </div>
+                        )}
+                        <div className="mt-4 flex flex-wrap justify-center gap-2">
+                            <button onClick={onCopy} className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50">🔗 링크 복사</button>
+                            <button onClick={handleDownload} className="text-xs font-bold px-3 py-2 rounded-xl border border-slate-300 hover:bg-slate-50">💾 QR 이미지 저장</button>
+                            <button onClick={() => setBig((b) => !b)} className="text-xs font-bold px-3 py-2 rounded-xl bg-orange-500 hover:bg-orange-600 text-white">
+                                {big ? '↩ 작게 보기' : '📺 크게 띄우기'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const FIREBASE_TIMEOUT_MS = 12000;   // 서버 응답 제한 시간
+        const WRITE_TIMEOUT_MS = 15000;
+        // 학생 화면은 실시간 연결 대신 REST로 상태를 확인
+        const STUDENT_POLL_MS = 4000;        // 결과/마감 상태 자동 확인 간격
+        const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const genCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+
+        const CONN_ERROR_TEXT = {
+            'no-library': 'Firebase 연결 프로그램을 불러오지 못했습니다. 학교망에서 www.gstatic.com 접속이 막혀 있을 수 있습니다.',
+            'server-timeout': 'Firebase 서버에서 응답이 없습니다. 인터넷 연결을 확인해 주세요. (학교망에서 firebasedatabase.app 주소가 막혀 있을 수 있습니다.)',
+            'no-room': '이 방 코드로 만든 모둠방이 없습니다. 방 코드를 다시 확인해 주세요.',
+            'permission-denied': 'Firebase 데이터베이스 접근이 거부되었습니다. (테스트 모드 기간 만료 또는 보안 규칙 문제) 선생님께 알려 주세요.',
+            'error': 'Firebase 서버와 통신하는 중 오류가 발생했습니다.'
+        };
+        const errCode = (e) => {
+            const s = String((e && (e.code || e.message)) || e || '').toLowerCase();
+            if (s.includes('permission')) return 'permission-denied';
+            if (s.includes('server-timeout')) return 'server-timeout';
+            return 'error';
+        };
+        const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+            const t = setTimeout(() => {
+                const err = new Error('server-timeout');
+                err.code = 'server-timeout';
+                reject(err);
+            }, ms);
+            Promise.resolve(promise).then(
+                (v) => { clearTimeout(t); resolve(v); },
+                (e) => { clearTimeout(t); reject(e); }
+            );
+        });
+        const getFirebase = () => window.__fbReady || Promise.reject(new Error('no-library'));
+
+        // 학생용 REST 조회: 지속적인 Firebase WebSocket 연결을 만들지 않음
+        const restBaseUrl = () => {
+            const base = String((window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL) || '').replace(/\/$/, '');
+            if (!base) {
+                const err = new Error('no-library');
+                err.code = 'no-library';
+                throw err;
+            }
+            return base;
+        };
+
+        const restGet = async (path) => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), FIREBASE_TIMEOUT_MS);
+            try {
+                const url = `${restBaseUrl()}/${path}.json?t=${Date.now()}`;
+                const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+                if (res.status === 401 || res.status === 403) {
+                    const err = new Error('permission-denied');
+                    err.code = 'permission-denied';
+                    throw err;
+                }
+                if (!res.ok) {
+                    const err = new Error(`Firebase REST 오류: ${res.status}`);
+                    err.code = 'error';
+                    throw err;
+                }
+                return await res.json();
+            } catch (e) {
+                if (e && e.name === 'AbortError') {
+                    const err = new Error('server-timeout');
+                    err.code = 'server-timeout';
+                    throw err;
+                }
+                throw e;
+            } finally {
+                clearTimeout(timer);
+            }
+        };
+
+        const safeStorage = {
+            get(key) {
+                try { return window.localStorage.getItem(key); } catch (e) { return null; }
+            },
+            set(key, value) {
+                try { window.localStorage.setItem(key, value); } catch (e) {}
+            },
+            remove(key) {
+                try { window.localStorage.removeItem(key); } catch (e) {}
+            }
+        };
+
+        const getOrCreateUid = () => {
+            let savedUid = safeStorage.get('food_maker_uid');
+            if (!savedUid) {
+                savedUid = 'usr_' + Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 6);
+                safeStorage.set('food_maker_uid', savedUid);
+            }
+            return savedUid;
+        };
+
+        // 이 기기가 만든 방인지 기록 (교사 화면 복원용). 실제 데이터는 Firebase에 있음
+        const hostKey = (code) => `food_maker_host_${code}`;
+        const HOST_LIST_KEY = 'food_maker_hosted_rooms';   // 이 기기에서 만든 방 목록 [{code, title, createdAt}]
+        const readHostList = () => {
+            try {
+                const arr = JSON.parse(safeStorage.get(HOST_LIST_KEY) || '[]');
+                return Array.isArray(arr) ? arr.filter((r) => r && r.code) : [];
+            } catch (e) {
+                return [];
+            }
+        };
+        const writeHostList = (list) => safeStorage.set(HOST_LIST_KEY, JSON.stringify(list));
+        const markHost = (code, info = {}) => {
+            safeStorage.set(hostKey(code), '1');
+            safeStorage.set('food_maker_last_host', code);
+            const list = readHostList().filter((r) => r.code !== code);
+            list.push({ code, title: info.title || '', createdAt: info.createdAt || Date.now() });
+            writeHostList(list);
+        };
+        const unmarkHost = (code) => {
+            safeStorage.remove(hostKey(code));
+            writeHostList(readHostList().filter((r) => r.code !== code));
+            if (safeStorage.get('food_maker_last_host') === code) safeStorage.remove('food_maker_last_host');
+        };
+        const isHostDevice = (code) => !!code && !!safeStorage.get(hostKey(code));
+        // 이 기기에서 만든 방 전체 (이전 버전에서 목록 없이 만든 방도 포함), 최신순
+        const getHostedRooms = () => {
+            const list = readHostList().filter((r) => isHostDevice(r.code));
+            const known = new Set(list.map((r) => r.code));
+            try {
+                for (let i = 0; i < window.localStorage.length; i++) {
+                    const k = window.localStorage.key(i);
+                    const m = k && k.match(/^food_maker_host_([A-Z0-9]{6})$/);
+                    if (m && !known.has(m[1])) {
+                        list.push({ code: m[1], title: '', createdAt: 0 });
+                        known.add(m[1]);
+                    }
+                }
+            } catch (e) {}
+            return list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        };
+        const formatDate = (ms) => {
+            if (!ms) return '';
+            try {
+                return new Date(ms).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            } catch (e) {
+                return '';
+            }
+        };
+
+        /*  Firebase 데이터 구조 (rooms/{방코드})
+            meta    : 제목, 모둠 목록(menus), 예상 인원 — 누구나 읽음
+            state   : isLocked, isRevealed, seats{uid: 모둠번호} — 누구나 읽음 (이름 없음, 정원 판정용)
+            members : {uid: {name, menuIndex, joinedAt}} — 교사만 전체 구독, 학생은 공개 전 본인 것만 구독
+            online  : {uid: true} — 접속 중인 학생 기기 수  */
+        const buildParticipants = (seats, members) => {
+            const out = {};
+            Object.entries(seats || {}).forEach(([uid, mi]) => {
+                const menuIndex = Number(mi);
+                if (!Number.isInteger(menuIndex)) return;
+                const m = (members && members[uid]) || {};
+                out[uid] = { name: m.name || '(이름 저장 중)', menuIndex, joinedAt: m.joinedAt || 0 };
+            });
+            return out;
+        };
+
+        // 학생 화면용 데이터: 결과 공개 전에는 본인 선택만, 각 모둠은 '정원 마감 여부'만
+        const buildStudentView = (room, uid, seats) => {
+            if (!room) return null;
+            const seatList = Object.values(seats || {}).map(Number);
+            const fullMenus = room.menus.map((m, idx) => seatList.filter(v => v === idx).length >= m.limit);
+            if (room.isRevealed) return { ...room, fullMenus, studentView: true };
+            const mine = uid ? (room.participants || {})[uid] : null;
+            return { ...room, participants: mine ? { [uid]: mine } : {}, fullMenus, studentView: true };
+        };
+
+        const copyText = (text) => {
+            const fallback = () => {
+                const dummy = document.createElement('textarea');
+                document.body.appendChild(dummy);
+                dummy.value = text;
+                dummy.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(dummy);
+            };
+            try {
+                if (navigator.clipboard && window.isSecureContext) {
+                    navigator.clipboard.writeText(text).catch(fallback);
+                    return;
+                }
+            } catch (e) {}
+            fallback();
+        };
+
+        const celebrate = () => {
+            if (window.confetti) {
+                window.confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
+            }
+        };
+
+        function App() {
+            const [user] = useState(() => ({ uid: getOrCreateUid() }));
+            const [roomId, setRoomId] = useState('');
+            const [joinCode, setJoinCode] = useState('');
+            const [meta, setMeta] = useState(null);
+            const [roomState, setRoomState] = useState(null);
+            const [members, setMembers] = useState({});
+            const [studentName, setStudentName] = useState(() => safeStorage.get('food_maker_name') || '');
+            const [toast, setToast] = useState(null);
+            const [isTeacher, setIsTeacher] = useState(false);
+            const [loading, setLoading] = useState(false);
+            const [connStatus, setConnStatus] = useState('idle'); // idle, connecting, connected, error
+            const [connStage, setConnStage] = useState('server'); // server, finding, receiving, ready
+            const [connError, setConnError] = useState(null);     // { code, message, detail }
+            const [online, setOnline] = useState(true);           // Firebase 서버와 연결 여부
+            const [reloadKey, setReloadKey] = useState(0);
+
+            // Setup Form State for teacher
+            const [setupTitle, setSetupTitle] = useState('우리 반 맛있는 모둠 만들기');
+            const [totalStudentsCount, setTotalStudentsCount] = useState(24);
+            const [menuCount, setMenuCount] = useState(4);
+            const [menusConfig, setMenusConfig] = useState([]);
+            const [isCreating, setIsCreating] = useState(false);
+            const [qrOpen, setQrOpen] = useState(false);
+            const [hostedRooms, setHostedRooms] = useState(() => getHostedRooms());
+            const [hostedInfo, setHostedInfo] = useState({});   // {code: {title, createdAt, exists, joined}}
+            const [deleting, setDeleting] = useState(false);
+            const [presentationMode, setPresentationMode] = useState(false);
+
+            const fbRef = useRef(null);
+            const isTeacherRef = useRef(false);
+            const busyRef = useRef(false);
+            const toastTimerRef = useRef(null);
+            const revealCelebratedRef = useRef(false);
+
+            useEffect(() => {
+                document.body.classList.toggle('presentation-mode', presentationMode && isTeacher);
+                return () => document.body.classList.remove('presentation-mode');
+            }, [presentationMode, isTeacher]);
+
+
+            useEffect(() => {
+                isTeacherRef.current = isTeacher;
+            }, [isTeacher]);
+
+            const showToast = (msg, type = 'info') => {
+                clearTimeout(toastTimerRef.current);
+                setToast({ message: msg, type });
+                toastTimerRef.current = setTimeout(() => setToast(null), 3500);
+            };
+
+            // URL 파라미터: ?room=CODE (학생), ?room=CODE&host=1 (교사, 이 기기에서 만든 방일 때만)
+            useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                const roomParam = (params.get('room') || '').trim().toUpperCase();
+                if (!roomParam) return;
+                if (params.get('host') === '1' && isHostDevice(roomParam)) {
+                    isTeacherRef.current = true;
+                    setIsTeacher(true);
+                }
+                setRoomId(roomParam);
+            }, []);
+
+            // 방 정보(meta)와 진행 상태(state)
+            // 교사: Firebase 실시간 구독 / 학생: REST 최초 조회 + state 4초 폴링
+            useEffect(() => {
+                setMeta(null);
+                setRoomState(null);
+                setConnError(null);
+                setConnStage('server');
+
+                if (!roomId) {
+                    setConnStatus('idle');
+                    return;
+                }
+
+                let cancelled = false;
+                const unsubs = [];
+                let pollTimer = null;
+                setConnStatus('connecting');
+
+                const fail = (code, detail) => {
+                    if (cancelled) return;
+                    setConnStatus('error');
+                    setOnline(false);
+                    setConnError({
+                        code,
+                        message: CONN_ERROR_TEXT[code] || CONN_ERROR_TEXT.error,
+                        detail: detail || code
+                    });
+                };
+
+                const applyMeta = (val) => {
+                    if (!val) {
+                        setMeta(null);
+                        fail('no-room');
+                        return false;
+                    }
+                    setMeta({ ...val, menus: Object.values(val.menus || {}) });
+                    return true;
+                };
+
+                if (isTeacher) {
+                    // 교사 화면은 즉시 현황을 봐야 하므로 기존 실시간 연결 유지
+                    let gotMeta = false;
+                    let gotState = false;
+
+                    const checkReady = () => {
+                        if (cancelled || !gotMeta || !gotState) return;
+                        setConnStage('ready');
+                        setConnStatus('connected');
+                        setOnline(true);
+                        setConnError(null);
+                    };
+
+                    const onErr = (e) => {
+                        console.warn('Firebase 구독 오류:', e);
+                        fail(errCode(e), String((e && (e.code || e.message)) || e));
+                    };
+
+                    getFirebase().then((fb) => {
+                        if (cancelled) return;
+                        fbRef.current = fb;
+                        const { db, ref, onValue } = fb;
+
+                        unsubs.push(onValue(ref(db, '.info/connected'), (snap) => {
+                            if (cancelled) return;
+                            const on = snap.val() === true;
+                            setOnline(on);
+                            if (on) setConnStage((st) => (st === 'server' ? 'finding' : st));
+                        }));
+
+                        unsubs.push(onValue(ref(db, `rooms/${roomId}/meta`), (snap) => {
+                            if (cancelled) return;
+                            if (!snap.exists()) {
+                                gotMeta = false;
+                                setConnStage('finding');
+                                fail('no-room');
+                                return;
+                            }
+                            gotMeta = applyMeta(snap.val());
+                            setConnStage('receiving');
+                            checkReady();
+                        }, onErr));
+
+                        unsubs.push(onValue(ref(db, `rooms/${roomId}/state`), (snap) => {
+                            if (cancelled) return;
+                            gotState = true;
+                            setRoomState(snap.val() || {});
+                            checkReady();
+                        }, onErr));
+                    }).catch((e) => {
+                        console.warn(e);
+                        fail('no-library');
+                    });
+                } else {
+                    // 학생은 지속 연결 없이 REST로 입장
+                    const loadInitial = async () => {
+                        try {
+                            setConnStage('finding');
+                            const [m, s] = await Promise.all([
+                                restGet(`rooms/${roomId}/meta`),
+                                restGet(`rooms/${roomId}/state`)
+                            ]);
+                            if (cancelled) return;
+                            if (!applyMeta(m)) return;
+                            setRoomState(s || {});
+                            setConnStage('ready');
+                            setConnStatus('connected');
+                            setOnline(true);
+                            setConnError(null);
+                        } catch (e) {
+                            if (cancelled) return;
+                            console.warn('학생 REST 초기 조회 오류:', e);
+                            fail(errCode(e), String((e && (e.code || e.message)) || e));
+                        }
+                    };
+
+                    const pollState = async () => {
+                        try {
+                            const s = await restGet(`rooms/${roomId}/state`);
+                            if (cancelled) return;
+                            if (!s) {
+                                setMeta(null);
+                                setRoomState(null);
+                                fail('no-room');
+                                return;
+                            }
+                            setRoomState(s || {});
+                            setConnStatus('connected');
+                            setOnline(true);
+                            setConnError(null);
+                        } catch (e) {
+                            if (cancelled) return;
+                            console.warn('학생 상태 확인 오류:', e);
+                            setOnline(false);
+                        }
+                    };
+
+                    loadInitial().then(() => {
+                        if (!cancelled) pollTimer = setInterval(pollState, STUDENT_POLL_MS);
+                    });
+                }
+
+                return () => {
+                    cancelled = true;
+                    if (pollTimer) clearInterval(pollTimer);
+                    unsubs.forEach((u) => { try { u(); } catch (e) {} });
+                };
+            }, [roomId, isTeacher, reloadKey]);
+
+            const revealedFlag = !!(roomState && roomState.isRevealed);
+
+            // 학생 이름 목록
+            // 교사: 전체 실시간 구독 / 학생: 공개 전 본인만 REST, 공개 후 전체를 REST로 1회 조회
+            useEffect(() => {
+                setMembers({});
+                if (!roomId) return;
+
+                let cancelled = false;
+                let unsub = null;
+
+                if (isTeacher) {
+                    getFirebase().then((fb) => {
+                        if (cancelled) return;
+                        const { db, ref, onValue } = fb;
+                        unsub = onValue(ref(db, `rooms/${roomId}/members`), (snap) => {
+                            if (!cancelled) setMembers(snap.val() || {});
+                        }, (e) => console.warn('members 구독 오류:', e));
+                    }).catch(() => {});
+                } else {
+                    const loadMembers = async () => {
+                        try {
+                            if (revealedFlag) {
+                                const all = await restGet(`rooms/${roomId}/members`);
+                                if (!cancelled) setMembers(all || {});
+                            } else {
+                                const mine = await restGet(`rooms/${roomId}/members/${user.uid}`);
+                                if (!cancelled) setMembers(mine ? { [user.uid]: mine } : {});
+                            }
+                        } catch (e) {
+                            if (!cancelled) console.warn('학생 members REST 조회 오류:', e);
+                        }
+                    };
+                    loadMembers();
+                }
+
+                return () => {
+                    cancelled = true;
+                    if (unsub) { try { unsub(); } catch (e) {} }
+                };
+            }, [roomId, isTeacher, revealedFlag, reloadKey]);
+
+            // 학생은 지속 실시간 연결을 사용하지 않으므로 online 접속 노드를 사용하지 않음.
+
+            const roomData = meta && roomState ? {
+                ...meta,
+                roomId,
+                isLocked: !!roomState.isLocked,
+                isRevealed: !!roomState.isRevealed,
+                selectionOpen: roomState.selectionOpen !== false,
+                participants: buildParticipants(roomState.seats, members)
+            } : null;
+
+            useEffect(() => {
+                const newConfigs = [];
+                const baseCapacity = Math.ceil(totalStudentsCount / menuCount);
+
+                for (let i = 0; i < menuCount; i++) {
+                    const preset = FOOD_PRESETS[i % FOOD_PRESETS.length];
+                    const existing = menusConfig[i];
+                    newConfigs.push({
+                        name: existing ? existing.name : preset.name,
+                        emoji: existing ? existing.emoji : preset.emoji,
+                        limit: existing ? existing.limit : baseCapacity
+                    });
+                }
+                setMenusConfig(newConfigs);
+            }, [menuCount]);
+
+            const handleAutoDistribute = () => {
+                const base = Math.floor(totalStudentsCount / menuCount);
+                const remainder = totalStudentsCount % menuCount;
+
+                const updated = menusConfig.map((m, idx) => ({
+                    ...m,
+                    limit: base + (idx < remainder ? 1 : 0)
+                }));
+                setMenusConfig(updated);
+                showToast("인원이 균등하게 배분되었습니다.");
+            };
+
+            const enterAsTeacher = (code) => {
+                isTeacherRef.current = true;
+                setIsTeacher(true);
+                setRoomId(code);
+                setIsCreating(false);
+                const newUrl = `${window.location.pathname}?room=${code}&host=1`;
+                window.history.pushState({ path: newUrl }, '', newUrl);
+            };
+
+            const firebaseErrorText = (e) => {
+                const code = errCode(e);
+                if (code === 'server-timeout') return 'Firebase 서버 응답이 없습니다. 인터넷 연결을 확인해 주세요.';
+                if (code === 'permission-denied') return CONN_ERROR_TEXT['permission-denied'];
+                if (String(e && e.message) === 'no-library') return CONN_ERROR_TEXT['no-library'];
+                return (e && e.message) || CONN_ERROR_TEXT.error;
+            };
+
+            const handleCreateRoom = async () => {
+                const sumCapacity = menusConfig.reduce((acc, curr) => acc + (Number(curr.limit) || 0), 0);
+                if (sumCapacity < 1) {
+                    showToast("최소 1명 이상의 인원을 설정해주세요.", "error");
+                    return;
+                }
+                if (loading) return;
+                setLoading(true);
+                try {
+                    const fb = await withTimeout(getFirebase(), FIREBASE_TIMEOUT_MS);
+                    fbRef.current = fb;
+                    const { db, ref, get, set } = fb;
+                    let code = null;
+                    for (let i = 0; i < 10; i++) {
+                        const candidate = genCode();
+                        const snap = await withTimeout(get(ref(db, `rooms/${candidate}`)), FIREBASE_TIMEOUT_MS);
+                        if (!snap.exists()) { code = candidate; break; }
+                    }
+                    if (!code) throw new Error('방 코드를 만들지 못했습니다. 다시 시도해 주세요.');
+
+                    const metaPayload = {
+                        roomId: code,
+                        title: setupTitle || '우리 반 모둠 만들기',
+                        createdAt: Date.now(),
+                        expectedCount: totalStudentsCount,
+                        menus: menusConfig.map((m, idx) => ({
+                            id: idx,
+                            name: m.name || `모둠 ${idx + 1}`,
+                            emoji: m.emoji || '🍕',
+                            limit: Math.max(1, parseInt(m.limit, 10) || 4),
+                            bg: FOOD_PRESETS[idx % FOOD_PRESETS.length].bg,
+                            badge: FOOD_PRESETS[idx % FOOD_PRESETS.length].badge
+                        })),
+                        createdBy: user.uid
+                    };
+                    await withTimeout(set(ref(db, `rooms/${code}`), {
+                        meta: metaPayload,
+                        state: { isLocked: false, isRevealed: false, selectionOpen: false }
+                    }), WRITE_TIMEOUT_MS);
+
+                    markHost(code, { title: metaPayload.title, createdAt: metaPayload.createdAt });
+                    enterAsTeacher(code);
+                    setQrOpen(true);
+                    showToast(`모둠방이 생성되었습니다! 방 코드: ${code}`);
+                } catch (e) {
+                    console.warn('방 만들기 실패:', e);
+                    showToast(`모둠방을 만들지 못했습니다. ${firebaseErrorText(e)}`, "error");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const handleResumeHost = (code) => {
+                if (!isHostDevice(code)) {
+                    showToast("이 기기에서 만든 모둠방이 아닙니다.", "error");
+                    return;
+                }
+                enterAsTeacher(code);
+                showToast(`모둠방(${code})을 다시 열었습니다.`);
+            };
+
+            const handleEnterRoom = () => {
+                const code = joinCode.trim().toUpperCase();
+                if (code.length !== 6) {
+                    showToast("6자리 방 코드를 입력해 주세요.", "error");
+                    return;
+                }
+                isTeacherRef.current = false;
+                setIsTeacher(false);
+                setRoomId(code);
+                const newUrl = `${window.location.pathname}?room=${code}`;
+                window.history.pushState({ path: newUrl }, '', newUrl);
+            };
+
+            const handleLeaveRoom = () => {
+                isTeacherRef.current = false;
+                setRoomId('');
+                setIsTeacher(false);
+                setIsCreating(false);
+                setQrOpen(false);
+                window.history.pushState({}, '', window.location.pathname);
+            };
+
+            const handleRetry = () => {
+                if (connError && connError.code === 'no-library') {
+                    window.location.reload();
+                    return;
+                }
+                setReloadKey((k) => k + 1);
+            };
+
+            // ---------- 지난 모둠방 관리 / 삭제 ----------
+            const refreshHostedRooms = () => setHostedRooms(getHostedRooms());
+
+            // 첫 화면으로 돌아올 때 목록 갱신
+            useEffect(() => {
+                if (!roomId && !isCreating) refreshHostedRooms();
+            }, [roomId, isCreating]);
+
+            // 목록에 있는 방의 제목·참여 인원·서버 존재 여부 확인
+            useEffect(() => {
+                if (roomId || isCreating || hostedRooms.length === 0) return;
+                let cancelled = false;
+                getFirebase().then((fb) => {
+                    const { db, ref, get } = fb;
+                    hostedRooms.forEach((r) => {
+                        withTimeout(get(ref(db, `rooms/${r.code}/meta`)), FIREBASE_TIMEOUT_MS).then((snap) => {
+                            if (cancelled) return;
+                            if (!snap.exists()) {
+                                setHostedInfo((prev) => ({ ...prev, [r.code]: { exists: false } }));
+                                return;
+                            }
+                            const m = snap.val() || {};
+                            setHostedInfo((prev) => ({ ...prev, [r.code]: { ...(prev[r.code] || {}), exists: true, title: m.title, createdAt: m.createdAt } }));
+                            return withTimeout(get(ref(db, `rooms/${r.code}/state/seats`)), FIREBASE_TIMEOUT_MS).then((s2) => {
+                                if (cancelled) return;
+                                const joined = Object.keys(s2.val() || {}).length;
+                                setHostedInfo((prev) => ({ ...prev, [r.code]: { ...(prev[r.code] || {}), joined } }));
+                            });
+                        }).catch(() => {});
+                    });
+                }).catch(() => {});
+                return () => { cancelled = true; };
+            }, [roomId, isCreating, hostedRooms.map((r) => r.code).join(',')]);
+
+            // 서버(Firebase)에서 방 하나 삭제 — 방마다 따로 요청해야 보안 규칙이 방 단위로 적용됨
+            const removeRoomOnServer = async (code) => {
+                const fb = fbRef.current || await withTimeout(getFirebase(), FIREBASE_TIMEOUT_MS);
+                fbRef.current = fb;
+                const { db, ref, set } = fb;
+                await withTimeout(set(ref(db, `rooms/${code}`), null), WRITE_TIMEOUT_MS);
+            };
+
+            const finishDelete = (codes) => {
+                codes.forEach((c) => unmarkHost(c));
+                setHostedInfo((prev) => {
+                    const next = { ...prev };
+                    codes.forEach((c) => { delete next[c]; });
+                    return next;
+                });
+                refreshHostedRooms();
+            };
+
+            const handleDeleteRoom = async (code) => {
+                if (!code || !isHostDevice(code)) {
+                    showToast("이 기기에서 만든 모둠방만 삭제할 수 있습니다.", "error");
+                    return;
+                }
+                if (deleting) return;
+                const info = hostedInfo[code];
+                // 이미 서버에 없는 방은 목록에서만 지움
+                if (info && info.exists === false) {
+                    finishDelete([code]);
+                    showToast(`모둠방(${code})을 목록에서 지웠습니다.`);
+                    return;
+                }
+                if (!window.confirm(`모둠방(${code})을 삭제할까요?\n\n학생 선택 기록과 명단이 서버에서 완전히 지워지며 되돌릴 수 없습니다.\n이 방에 접속해 있는 학생 화면에는 '방이 없습니다'라고 표시됩니다.`)) return;
+                setDeleting(true);
+                try {
+                    if (roomId === code) handleLeaveRoom();   // 현황판 구독을 먼저 끊고 삭제
+                    await removeRoomOnServer(code);
+                    finishDelete([code]);
+                    showToast(`모둠방(${code})을 삭제했습니다.`);
+                } catch (e) {
+                    console.warn('방 삭제 실패:', e);
+                    if (window.confirm(`서버에서 삭제하지 못했습니다.\n(${firebaseErrorText(e)})\n\n이 기기의 목록에서만 지울까요? (서버 데이터는 남아 있습니다)`)) {
+                        finishDelete([code]);
+                        showToast("이 기기의 목록에서 지웠습니다.");
+                    }
+                } finally {
+                    setDeleting(false);
+                }
+            };
+
+            const handleDeleteAllRooms = async () => {
+                const codes = hostedRooms.map((r) => r.code);
+                if (codes.length === 0 || deleting) return;
+                if (!window.confirm(`이 기기에서 만든 모둠방 ${codes.length}개를 모두 삭제할까요?\n\n모든 학생 선택 기록과 명단이 서버에서 지워지며 되돌릴 수 없습니다.`)) return;
+                setDeleting(true);
+                try {
+                    // 이미 서버에 없는 방은 목록에서만 정리
+                    const gone = codes.filter((c) => hostedInfo[c] && hostedInfo[c].exists === false);
+                    const targets = codes.filter((c) => !gone.includes(c));
+                    const done = [];
+                    const failed = [];
+                    // 한 번에 묶어 보내면 방 하나만 거부돼도 전체가 실패하므로, 한 방씩 차례로 삭제
+                    for (const c of targets) {
+                        try {
+                            await removeRoomOnServer(c);
+                            done.push(c);
+                        } catch (e) {
+                            console.warn(`방 삭제 실패 (${c}):`, e);
+                            failed.push({ code: c, reason: firebaseErrorText(e) });
+                        }
+                    }
+                    finishDelete([...done, ...gone]);
+
+                    if (failed.length === 0) {
+                        showToast(`모둠방 ${done.length + gone.length}개를 모두 삭제했습니다.`);
+                        return;
+                    }
+                    const failedCodes = failed.map((f) => f.code);
+                    const msg = `${done.length + gone.length}개는 삭제했지만, ${failed.length}개(${failedCodes.join(', ')})는 서버에서 삭제하지 못했습니다.\n(${failed[0].reason})\n\n` +
+                        `예전 버전이나 다른 로그인 상태에서 만든 방은 보안 규칙 때문에 지워지지 않을 수 있습니다.\n\n` +
+                        `삭제하지 못한 방을 이 기기의 목록에서만 지울까요? (서버 데이터는 남아 있습니다)`;
+                    if (window.confirm(msg)) {
+                        finishDelete(failedCodes);
+                        showToast(`${failed.length}개는 이 기기의 목록에서만 지웠습니다.`);
+                    } else {
+                        showToast(`${failed.length}개 방은 삭제되지 않아 목록에 남아 있습니다.`, "error");
+                    }
+                } finally {
+                    setDeleting(false);
+                }
+            };
+
+            // ---------- 학생 화면용 파생 데이터 ----------
+            const viewData = isTeacher ? roomData : buildStudentView(roomData, user.uid, roomState && roomState.seats);
+            const myEntry = !isTeacher && viewData && viewData.participants ? viewData.participants[user.uid] : null;
+            const myMenuIndex = myEntry && viewData.menus[myEntry.menuIndex] ? myEntry.menuIndex : null;
+            const isRevealed = !!(viewData && viewData.isRevealed);
+
+            // 새로고침 후에도 이전에 입력한 이름을 복원
+            useEffect(() => {
+                if (!isTeacher && myEntry && myEntry.name && myEntry.name !== '(이름 저장 중)' && !studentName) {
+                    setStudentName(myEntry.name);
+                }
+            }, [myEntry ? myEntry.name : null]);
+
+            // 결과 공개 순간 학생 화면에 알림
+            useEffect(() => {
+                if (isTeacher || !viewData) return;
+                if (isRevealed && !revealCelebratedRef.current) {
+                    revealCelebratedRef.current = true;
+                    showToast("모둠 결과가 공개되었습니다!");
+                    celebrate();
+                } else if (!isRevealed) {
+                    revealCelebratedRef.current = false;
+                }
+            }, [isRevealed, isTeacher]);
+
+            const handleJoinMenu = async (targetMenuIndex) => {
+                const name = studentName.trim().slice(0, 20);
+                if (!name) {
+                    showToast("이름(또는 번호)을 먼저 입력해주세요!", "error");
+                    return;
+                }
+
+                if (!roomData || !viewData) return;
+                if (!viewData.selectionOpen) {
+                    showToast("선생님이 선택 시작을 누르면 모둠을 고를 수 있어요.", "error");
+                    return;
+                }
+                if (viewData.isLocked) {
+                    showToast("선택이 마감되었습니다.", "error");
+                    return;
+                }
+
+                const targetMenu = roomData.menus[targetMenuIndex];
+                if (!targetMenu) return;
+
+                if (myMenuIndex === targetMenuIndex && myEntry && myEntry.name === name) {
+                    showToast(`이미 ${targetMenu.name}을(를) 선택했어요.`);
+                    return;
+                }
+
+                if (myMenuIndex !== targetMenuIndex && viewData.fullMenus && viewData.fullMenus[targetMenuIndex]) {
+                    showToast(`'${targetMenu.name}'의 정원이 가득 찼습니다!`, "error");
+                    return;
+                }
+
+                if (busyRef.current) return;
+                busyRef.current = true;
+                setLoading(true);
+                safeStorage.set('food_maker_name', name);
+
+                let fb = null;
+                let reason = '';
+
+                try {
+                    // 선택 순간에만 Firebase SDK 연결:
+                    // runTransaction으로 정원 초과를 막고, 저장이 끝나면 즉시 goOffline
+                    fb = await withTimeout(getFirebase(), FIREBASE_TIMEOUT_MS);
+                    fbRef.current = fb;
+
+                    const { db, ref, runTransaction, set, serverTimestamp, goOnline, goOffline } = fb;
+                    try { if (goOnline) goOnline(db); } catch (e) {}
+
+                    const res = await withTimeout(runTransaction(ref(db, `rooms/${roomId}/state`), (st) => {
+                        reason = '';
+
+                        if (!st) {
+                            reason = 'no-room';
+                            return st;
+                        }
+
+                        if (st.isLocked) {
+                            reason = 'locked';
+                            return;
+                        }
+
+                        const seats = st.seats || {};
+                        const taken = Object.entries(seats)
+                            .filter(([uid, v]) => uid !== user.uid && Number(v) === targetMenuIndex)
+                            .length;
+
+                        if (taken >= targetMenu.limit) {
+                            reason = 'full';
+                            return;
+                        }
+
+                        return {
+                            ...st,
+                            seats: { ...seats, [user.uid]: targetMenuIndex }
+                        };
+                    }, { applyLocally: false }), WRITE_TIMEOUT_MS);
+
+                    if (!res.committed || reason) {
+                        if (reason === 'locked') showToast("선택이 마감되었습니다.", "error");
+                        else if (reason === 'full') showToast(`'${targetMenu.name}'의 정원이 방금 가득 찼습니다! 다른 모둠을 골라 주세요.`, "error");
+                        else if (reason === 'no-room') showToast("모둠방을 찾을 수 없습니다.", "error");
+                        else showToast("저장에 실패했습니다. 다시 시도해 주세요.", "error");
+                        return;
+                    }
+
+                    await withTimeout(set(ref(db, `rooms/${roomId}/members/${user.uid}`), {
+                        name,
+                        menuIndex: targetMenuIndex,
+                        joinedAt: serverTimestamp()
+                    }), WRITE_TIMEOUT_MS);
+
+                    // SDK 연결을 끊기 전에 서버에 저장된 최신 값을 화면에 반영
+                    const freshState = res.snapshot ? res.snapshot.val() : null;
+                    if (freshState) setRoomState(freshState);
+
+                    // 본인 정보는 REST로 다시 받아 화면에 정확히 반영
+                    try {
+                        const freshMe = await restGet(`rooms/${roomId}/members/${user.uid}`);
+                        setMembers(freshMe ? { [user.uid]: freshMe } : {});
+                    } catch (refreshErr) {
+                        console.warn('선택 후 본인 정보 갱신 실패:', refreshErr);
+                    }
+
+                    showToast(`${targetMenu.emoji} ${targetMenu.name} 선택 완료!`);
+                    celebrate();
+                } catch (e) {
+                    console.warn('선택 저장 실패:', e);
+                    showToast(`저장에 실패했습니다. ${firebaseErrorText(e)}`, "error");
+                } finally {
+                    // 학생은 선택이 끝나면 실시간 연결을 바로 닫음
+                    if (fb && !isTeacherRef.current) {
+                        try {
+                            if (fb.goOffline) fb.goOffline(fb.db);
+                        } catch (e) {}
+                    }
+                    busyRef.current = false;
+                    setLoading(false);
+                }
+            };
+
+            // ---------- 교사 전용 동작 ----------
+            const teacherWrite = (path, value, okMsg) => {
+                const fb = fbRef.current;
+                if (!isTeacher || !fb) return;
+                const { db, ref, update } = fb;
+                withTimeout(update(ref(db, path), value), WRITE_TIMEOUT_MS)
+                    .then(() => { if (okMsg) showToast(okMsg); })
+                    .catch((e) => {
+                        console.warn(e);
+                        showToast(`저장에 실패했습니다. ${firebaseErrorText(e)}`, "error");
+                    });
+            };
+
+            const handleToggleLock = () => {
+                if (!isTeacher || !roomData) return;
+                const newLock = !roomData.isLocked;
+                const newRevealed = newLock ? !!roomData.isRevealed : false;
+                teacherWrite(`rooms/${roomId}/state`, { isLocked: newLock, isRevealed: newRevealed },
+                    newLock ? "모둠 선택이 마감되었습니다. 이제 결과를 공개할 수 있습니다." : "모둠 선택이 재개되었습니다. (결과는 다시 비공개)");
+            };
+
+            const handleStartSelection = () => {
+                if (!isTeacher || !roomData) return;
+                teacherWrite(`rooms/${roomId}/state`, { selectionOpen: true, isLocked: false }, "학생들의 모둠 선택을 시작했습니다.");
+            };
+
+            const handleMoveParticipant = (uid, targetMenuIndex) => {
+                if (!isTeacher || !roomData || !roomData.participants[uid]) return;
+                const target = roomData.menus[targetMenuIndex];
+                const count = getMembers(roomData, targetMenuIndex).filter((m) => m.uid !== uid).length;
+                if (!target || count >= target.limit) { showToast(`'${target ? target.name : '모둠'}'의 정원이 가득 찼습니다.`, "error"); return; }
+                teacherWrite(`rooms/${roomId}`, { [`state/seats/${uid}`]: targetMenuIndex, [`members/${uid}/menuIndex`]: targetMenuIndex }, `${roomData.participants[uid].name} 학생을 이동했습니다.`);
+            };
+
+            const handleAddParticipant = (targetMenuIndex) => {
+                if (!isTeacher || !roomData) return;
+                const clean = String(window.prompt('추가할 학생 이름을 입력하세요.') || '').trim().slice(0, 20);
+                if (!clean) return;
+                const target = roomData.menus[targetMenuIndex];
+                if (getMembers(roomData, targetMenuIndex).length >= target.limit) { showToast(`'${target.name}'의 정원이 가득 찼습니다.`, "error"); return; }
+                const uid = `teacher_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+                teacherWrite(`rooms/${roomId}`, { [`state/seats/${uid}`]: targetMenuIndex, [`members/${uid}`]: { name: clean, menuIndex: targetMenuIndex, joinedAt: Date.now(), addedByTeacher: true } }, `${clean} 학생을 추가했습니다.`);
+            };
+
+            const handleToggleReveal = () => {
+                if (!isTeacher || !roomData) return;
+                if (!roomData.isLocked) {
+                    showToast("먼저 모둠 선택을 마감해 주세요.", "error");
+                    return;
+                }
+                const newRevealed = !roomData.isRevealed;
+                if (newRevealed && !window.confirm("학생 화면에 모든 모둠 명단이 공개됩니다. 공개할까요?")) return;
+                teacherWrite(`rooms/${roomId}/state`, { isRevealed: newRevealed },
+                    newRevealed ? "학생들에게 모둠 결과를 공개했습니다." : "모둠 결과를 다시 비공개로 전환했습니다.");
+            };
+
+            const handleRemoveParticipant = (uid) => {
+                if (!isTeacher || !roomData || !roomData.participants[uid]) return;
+                const target = roomData.participants[uid];
+                if (!window.confirm(`'${target.name}' 학생의 선택을 취소할까요?`)) return;
+                teacherWrite(`rooms/${roomId}`, { [`state/seats/${uid}`]: null, [`members/${uid}`]: null },
+                    `${target.name} 학생의 선택을 취소했습니다.`);
+            };
+
+            const handleCopyLink = () => {
+                copyText(studentUrl(roomId));
+                showToast("학생 공유 링크가 복사되었습니다!");
+            };
+
+            const handleCopySummary = () => {
+                if (!isTeacher || !roomData) return;
+                const participants = roomData.participants || {};
+                let summaryText = `[${roomData.title} 모둠 편성 결과]\n`;
+                summaryText += `방 코드: ${roomId}\n-----------------------\n`;
+
+                roomData.menus.forEach((menu, idx) => {
+                    const list = Object.values(participants)
+                        .filter(p => p.menuIndex === idx)
+                        .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0))
+                        .map(p => p.name);
+                    summaryText += `${menu.emoji} ${menu.name} (${list.length}/${menu.limit}명): ${list.join(', ') || '없음'}\n`;
+                });
+
+                copyText(summaryText);
+                showToast("전체 모둠 목록이 클립보드에 복사되었습니다!");
+            };
+
+            const getMembers = (data, idx) => Object.entries((data && data.participants) || {})
+                .filter(([_, info]) => info && info.menuIndex === idx)
+                .map(([uid, info]) => ({ uid, ...info }))
+                .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+
+
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    <Toast message={toast?.message} type={toast?.type} onClose={() => setToast(null)} />
+                    {qrOpen && isTeacher && roomId && (
+                        <QrModal
+                            url={studentUrl(roomId)}
+                            code={roomId}
+                            title={(roomData && roomData.title) || '모둠방'}
+                            onClose={() => setQrOpen(false)}
+                            onCopy={handleCopyLink}
+                        />
+                    )}
+
+                    {/* Navigation Header */}
+                    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+                        <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-3 cursor-pointer" onClick={handleLeaveRoom}>
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-500 flex items-center justify-center text-2xl shadow-md text-white">
+                                    🍕
+                                </div>
+                                <div>
+                                    <h1 className="font-extrabold text-slate-800 text-lg leading-tight">맛있는 모둠 편성기</h1>
+                                    <p className="text-xs text-slate-500">음식 취향으로 만드는 맞춤형 모둠</p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {roomId && (
+                                    <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700">
+                                        {isTeacher && (
+                                            <span className="bg-slate-800 text-white px-2 py-0.5 rounded">교사</span>
+                                        )}
+                                        <span className="hidden sm:inline">상태:</span>
+                                        {connStatus === 'connected' && online ? (
+                                            <span className="text-emerald-600 flex items-center gap-1">{isTeacher ? '🟢 실시간 연결됨' : '🟢 서버 연결됨'}</span>
+                                        ) : connStatus === 'connecting' ? (
+                                            <span className="text-amber-600 flex items-center gap-1 animate-pulse">🟡 연결 시도 중...</span>
+                                        ) : connStatus === 'error' || (connStatus === 'connected' && !online) ? (
+                                            <span className="text-rose-600 flex items-center gap-1">🔴 연결 끊김 (재연결 중)</span>
+                                        ) : (
+                                            <span className="text-slate-500">⚪ 대기 중</span>
+                                        )}
+                                        <span className="ml-1 border-l pl-2">방 코드: <strong className="text-orange-600 font-mono text-sm">{roomId}</strong></span>
+                                        {isTeacher && (
+                                            <button onClick={handleCopyLink} className="ml-1 text-slate-500 hover:text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-300">
+                                                링크 복사 🔗
+                                            </button>
+                                        )}
+                                        {isTeacher && (
+                                            <button onClick={() => setQrOpen(true)} className="text-slate-500 hover:text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-300">
+                                                QR 코드 📱
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                                {!roomId && !isCreating && (
+                                    <button
+                                        onClick={() => setIsCreating(true)}
+                                        className="bg-orange-500 hover:bg-orange-600 text-white font-bold text-sm px-4 py-2 rounded-xl transition shadow-sm"
+                                    >
+                                        + 새 모둠방 만들기 (교사용)
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </header>
+
+                    {/* Main Content Area */}
+                    <main className="flex-1 max-w-6xl w-full mx-auto p-4 md:p-6">
+                        {isCreating ? (
+                            <div className="max-w-2xl mx-auto bg-white rounded-2xl shadow-sm border border-slate-200 p-6 md:p-8">
+                                <div className="flex items-center justify-between mb-6 pb-4 border-b">
+                                    <div>
+                                        <h2 className="text-xl font-bold text-slate-800">🛠️ 새 모둠방 설정하기</h2>
+                                        <p className="text-xs text-slate-500 mt-1">메뉴 개수와 정원을 설정해 학생들과 공유할 모둠판을 만듭니다.</p>
+                                    </div>
+                                    <button onClick={() => setIsCreating(false)} className="text-slate-400 hover:text-slate-600 text-sm">
+                                        취소
+                                    </button>
+                                </div>
+
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="block text-sm font-bold text-slate-700 mb-1">모둠 세션 이름</label>
+                                        <input 
+                                            type="text"
+                                            value={setupTitle}
+                                            onChange={(e) => setSetupTitle(e.target.value)}
+                                            placeholder="예: 3학년 2반 과학 모둠"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">전체 학생 수 (예상)</label>
+                                            <input 
+                                                type="number"
+                                                min="2"
+                                                max="60"
+                                                value={totalStudentsCount}
+                                                onChange={(e) => setTotalStudentsCount(parseInt(e.target.value, 10) || 0)}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-slate-700 mb-1">메뉴(모둠) 개수 (최대 {MAX_MENUS}개)</label>
+                                            <select 
+                                                value={menuCount}
+                                                onChange={(e) => setMenuCount(parseInt(e.target.value, 10))}
+                                                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm"
+                                            >
+                                                {Array.from({ length: MAX_MENUS - 1 }, (_, i) => i + 2).map(num => (
+                                                    <option key={num} value={num}>{num}개 모둠</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-sm font-bold text-slate-700">메뉴별 이름 & 수용 정원 세팅</label>
+                                            <button 
+                                                type="button" 
+                                                onClick={handleAutoDistribute}
+                                                className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-lg font-medium border"
+                                            >
+                                                ⚡ 인원 자동 균등 배분
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                                            {menusConfig.map((mConfig, idx) => (
+                                                <div key={idx} className="flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                                    <div className="text-2xl w-10 text-center">{mConfig.emoji}</div>
+                                                    <select 
+                                                        value={mConfig.emoji}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value;
+                                                            setMenusConfig(prev => prev.map((m, i) => i === idx ? { ...m, emoji: value } : m));
+                                                        }}
+                                                        className="px-2 py-1.5 border border-slate-300 rounded-lg text-sm bg-white"
+                                                    >
+                                                        {FOOD_PRESETS.map((fp, i) => (
+                                                            <option key={i} value={fp.emoji}>{fp.emoji} {fp.name}</option>
+                                                        ))}
+                                                    </select>
+
+                                                    <input 
+                                                        type="text"
+                                                        value={mConfig.name}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value;
+                                                            setMenusConfig(prev => prev.map((m, i) => i === idx ? { ...m, name: value } : m));
+                                                        }}
+                                                        placeholder={`메뉴 ${idx + 1}`}
+                                                        className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none bg-white"
+                                                    />
+
+                                                    <div className="flex items-center gap-1">
+                                                        <input 
+                                                            type="number"
+                                                            min="1"
+                                                            max="30"
+                                                            value={mConfig.limit}
+                                                            onChange={(e) => {
+                                                                const value = parseInt(e.target.value, 10) || 0;
+                                                                setMenusConfig(prev => prev.map((m, i) => i === idx ? { ...m, limit: value } : m));
+                                                            }}
+                                                            className="w-16 px-2 py-1.5 border border-slate-300 rounded-lg text-center font-bold text-sm bg-white"
+                                                        />
+                                                        <span className="text-xs text-slate-500 font-medium">명</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <button 
+                                        onClick={handleCreateRoom}
+                                        disabled={loading}
+                                        className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold rounded-xl shadow-md transition text-base disabled:opacity-50"
+                                    >
+                                        🚀 모둠방 개설하고 학생 공유하기
+                                    </button>
+                                </div>
+                            </div>
+                        ) : !roomId ? (
+                            <div className="max-w-md mx-auto my-12 text-center">
+                                <div className="bg-white rounded-3xl shadow-sm border border-slate-200 p-8">
+                                    <div className="text-6xl mb-4">🍕🍔🍣</div>
+                                    <h2 className="text-2xl font-extrabold text-slate-800 mb-2">맛있는 모둠 참가하기</h2>
+                                    <p className="text-sm text-slate-500 mb-6">선생님께 전달받은 <strong className="text-slate-700">방 코드</strong>를 입력하거나<br/>공유 링크로 바로 들어오세요!</p>
+
+                                    <div className="space-y-4">
+                                        <input
+                                            type="text"
+                                            value={joinCode}
+                                            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                                            onKeyDown={(e) => { if (e.key === 'Enter') handleEnterRoom(); }}
+                                            placeholder="방 코드 입력 (예: AB12CD)"
+                                            maxLength={6}
+                                            className="w-full text-center tracking-widest text-xl font-mono uppercase px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-orange-500 focus:outline-none"
+                                        />
+                                        <button
+                                            onClick={handleEnterRoom}
+                                            className="w-full py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition shadow"
+                                        >
+                                            입장하기 🚪
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-8 pt-6 border-t border-slate-100 space-y-3">
+                                        <p className="text-xs text-slate-400">선생님이신가요? 직접 모둠을 세팅해 보세요.</p>
+                                        <button
+                                            onClick={() => setIsCreating(true)}
+                                            className="text-orange-600 hover:text-orange-700 font-bold text-sm inline-flex items-center gap-1"
+                                        >
+                                            새 모둠방 만들기 ➔
+                                        </button>
+                                        {hostedRooms.length > 0 && (
+                                            <div className="text-left mt-4 border border-slate-200 rounded-2xl overflow-hidden">
+                                                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 border-b border-slate-200">
+                                                    <span className="text-xs font-bold text-slate-700">이 기기에서 만든 모둠방 ({hostedRooms.length})</span>
+                                                    <button
+                                                        onClick={handleDeleteAllRooms}
+                                                        disabled={deleting}
+                                                        className="text-[11px] text-rose-500 hover:text-rose-700 font-bold disabled:opacity-40"
+                                                    >
+                                                        전체 삭제
+                                                    </button>
+                                                </div>
+                                                <ul className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                                                    {hostedRooms.map((r) => {
+                                                        const info = hostedInfo[r.code] || {};
+                                                        const gone = info.exists === false;
+                                                        const title = info.title || r.title || '(제목 불러오는 중)';
+                                                        const created = formatDate(info.createdAt || r.createdAt);
+                                                        return (
+                                                            <li key={r.code} className="flex items-center gap-2 px-4 py-2.5">
+                                                                <div className="flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="font-mono font-bold text-orange-600 text-sm">{r.code}</span>
+                                                                        {gone && (
+                                                                            <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded">서버에 없음</span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-xs text-slate-600 truncate">{gone ? '이미 삭제되었거나 찾을 수 없는 방' : title}</div>
+                                                                    <div className="text-[10px] text-slate-400">
+                                                                        {created}{typeof info.joined === 'number' ? ` · 선택 ${info.joined}명` : ''}
+                                                                    </div>
+                                                                </div>
+                                                                {!gone && (
+                                                                    <button
+                                                                        onClick={() => handleResumeHost(r.code)}
+                                                                        className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white"
+                                                                    >
+                                                                        관리
+                                                                    </button>
+                                                                )}
+                                                                <button
+                                                                    onClick={() => handleDeleteRoom(r.code)}
+                                                                    disabled={deleting}
+                                                                    className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                                                                >
+                                                                    {gone ? '목록에서 지우기' : '삭제'}
+                                                                </button>
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ) : !roomData ? (
+                            <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 max-w-lg mx-auto p-8 my-8 shadow-sm">
+                                <div className={`text-5xl mb-4 ${connStatus === 'error' ? '' : 'animate-bounce'}`}>{connStatus === 'error' ? '📡' : '🍳'}</div>
+                                <h3 className="text-lg font-bold text-slate-800 mb-2">
+                                    {connStatus === 'error' ? '모둠방에 아직 연결되지 않았습니다' : '모둠방에 접속하는 중입니다...'}
+                                </h3>
+                                <p className="text-xs text-slate-500 mb-4 leading-relaxed">
+                                    방 코드: <strong className="text-orange-600">{roomId}</strong><br/>
+                                    선생님 화면이 닫혀 있어도 접속할 수 있습니다.
+                                </p>
+
+                                <ol className="text-left text-xs max-w-xs mx-auto mb-4 space-y-1.5">
+                                    {[
+                                        { key: 'server', label: '① Firebase 서버 접속' },
+                                        { key: 'finding', label: '② 모둠방 찾기' },
+                                        { key: 'receiving', label: '③ 모둠 목록 받기' }
+                                    ].map((step, idx) => {
+                                        const order = ['server', 'finding', 'receiving', 'ready'];
+                                        const cur = order.indexOf(connStage);
+                                        const done = idx < cur;
+                                        const active = idx === cur;
+                                        const failed = active && connStatus === 'error';
+                                        return (
+                                            <li key={step.key} className={`flex items-center gap-2 ${done ? 'text-emerald-600' : failed ? 'text-rose-600 font-bold' : active ? 'text-slate-800 font-bold' : 'text-slate-400'}`}>
+                                                <span className="w-4 text-center">{done ? '✓' : failed ? '✕' : active ? '…' : '·'}</span>
+                                                <span>{step.label}</span>
+                                            </li>
+                                        );
+                                    })}
+                                </ol>
+
+                                {connError && (
+                                    <div className="text-left bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl px-4 py-3 mb-4 leading-relaxed">
+                                        <div className="font-bold mb-1">{connError.message}</div>
+                                        <div className="text-rose-500">
+                                            {connError.code === 'no-room' || connError.code === 'no-library'
+                                                ? '방 코드를 확인한 뒤 아래 버튼을 눌러 주세요.'
+                                                : '연결되면 자동으로 화면이 바뀝니다. 아래 버튼으로 바로 다시 시도할 수도 있습니다.'}
+                                        </div>
+                                        <div className="text-[10px] text-rose-400 mt-1">진단 코드: {connError.detail}</div>
+                                    </div>
+                                )}
+
+                                <div className="flex flex-col gap-2 max-w-xs mx-auto">
+                                    <button
+                                        onClick={handleRetry}
+                                        className="py-2.5 px-4 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold rounded-xl transition"
+                                    >
+                                        🔄 지금 다시 연결하기
+                                    </button>
+                                    <button onClick={handleLeaveRoom} className="mt-2 text-xs text-slate-400 underline">
+                                        다른 방 코드 입력
+                                    </button>
+                                </div>
+                            </div>
+                        ) : isTeacher ? (
+                            <div className="space-y-6">
+                                {/* Teacher Banner */}
+                                <div className="bg-gradient-to-r from-slate-800 to-slate-700 rounded-2xl p-6 text-white shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                                    <div>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            <span className="inline-block bg-white/20 text-xs px-3 py-1 rounded-full font-bold">👑 교사용 실시간 현황판</span>
+                                            <span className="inline-block bg-white/20 text-xs px-3 py-1 rounded-full font-bold">
+                                                {roomData.isRevealed ? "📢 결과 공개됨" : roomData.isLocked ? "🔒 선택 마감됨 (결과 비공개)" : "🟢 선택 진행 중 (결과 비공개)"}
+                                            </span>
+                                        </div>
+                                        <h2 className="text-2xl font-black">{roomData.title}</h2>
+                                        <p className="text-xs text-white/70 mt-1">
+                                            학생 화면에는 결과 공개 전까지 본인이 고른 모둠만 보입니다. 이 화면에서만 전체 선택 현황이 실시간으로 표시됩니다.
+                                        </p>
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        {!roomData.selectionOpen && <button onClick={handleStartSelection} className="font-bold text-xs px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white transition">▶️ 선택 시작</button>}
+                                        <button
+                                            onClick={handleCopyLink}
+                                            className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/30 transition"
+                                        >
+                                            🔗 학생 링크 복사
+                                        </button>
+                                        <button
+                                            onClick={() => setQrOpen(true)}
+                                            className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/30 transition"
+                                        >
+                                            📱 학생 QR 코드
+                                        </button>
+                                        <button
+                                            onClick={handleCopySummary}
+                                            className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/30 transition"
+                                        >
+                                            📋 결과 복사
+                                        </button>
+                                        <button onClick={() => setPresentationMode((v) => !v)} className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2 rounded-xl border border-white/30 transition">📺 {presentationMode ? '일반 화면' : '큰 화면 보기'}</button>
+                                        <button
+                                            onClick={handleToggleLock}
+                                            className={`font-bold text-xs px-3 py-2 rounded-xl transition ${roomData.isLocked ? 'bg-white text-slate-800 hover:bg-slate-100' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}
+                                        >
+                                            {roomData.isLocked ? "🔓 선택 재개" : "🔒 마감하기"}
+                                        </button>
+                                        <button
+                                            onClick={handleToggleReveal}
+                                            disabled={!roomData.isLocked}
+                                            title={!roomData.isLocked ? "먼저 선택을 마감해야 공개할 수 있습니다" : ""}
+                                            className={`font-bold text-xs px-3 py-2 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed ${roomData.isRevealed ? 'bg-white/10 border border-white/30 text-white hover:bg-white/20' : 'bg-orange-500 hover:bg-orange-600 text-white'}`}
+                                        >
+                                            {roomData.isRevealed ? "🙈 결과 다시 숨기기" : "📢 학생에게 결과 공개"}
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteRoom(roomId)}
+                                            disabled={deleting}
+                                            className="font-bold text-xs px-3 py-2 rounded-xl border border-rose-300/60 text-rose-200 hover:bg-rose-500 hover:text-white transition disabled:opacity-40"
+                                        >
+                                            🗑️ 방 삭제
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Teacher Stats */}
+                                {(() => {
+                                    const joined = Object.keys(roomData.participants || {}).length;
+                                    const capacity = roomData.menus.reduce((acc, m) => acc + (Number(m.limit) || 0), 0);
+                                    const expected = roomData.expectedCount || 0;
+                                    return (
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                            <div className="bg-white rounded-xl border border-slate-200 p-4">
+                                                <div className="text-xs text-slate-500 font-bold">선택 완료 학생</div>
+                                                <div className="text-2xl font-black text-slate-800">{joined}<span className="text-sm text-slate-400 font-bold"> / {expected || '-'}명</span></div>
+                                            </div>
+                                            <div className="bg-white rounded-xl border border-slate-200 p-4">
+                                                <div className="text-xs text-slate-500 font-bold">남은 자리</div>
+                                                <div className="text-2xl font-black text-slate-800">{Math.max(capacity - joined, 0)}<span className="text-sm text-slate-400 font-bold"> / {capacity}석</span></div>
+                                            </div>
+                                            <div className="bg-white rounded-xl border border-slate-200 p-4">
+                                                <div className="text-xs text-slate-500 font-bold">학생 접속 방식</div>
+                                                <div className="text-sm font-black text-emerald-700 mt-1">REST 절약 모드</div>
+                                                <div className="text-[10px] text-slate-400 mt-1 leading-snug">선택할 때만 Firebase에 잠깐 연결합니다.</div>
+                                            </div>
+                                            <div className="bg-white rounded-xl border border-slate-200 p-4">
+                                                <div className="text-xs text-slate-500 font-bold">진행 단계</div>
+                                                <div className="text-sm font-black text-slate-800 mt-1">
+                                                    {roomData.isRevealed ? "③ 결과 공개" : roomData.isLocked ? "② 마감 → 공개 대기" : "① 학생 선택 중"}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {!online && (
+                                    <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl px-4 py-3 leading-relaxed">
+                                        <div className="font-bold mb-1">인터넷 연결이 끊겨 Firebase 서버에 다시 연결하는 중입니다.</div>
+                                        <div>연결이 돌아오면 자동으로 최신 현황이 표시됩니다. 학생들의 선택은 서버에 안전하게 저장되어 있습니다.</div>
+                                    </div>
+                                )}
+
+                                <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl px-4 py-3">
+                                    💾 선택 기록은 Firebase 서버에 저장됩니다. 이 화면을 닫아도 학생들은 계속 선택할 수 있고, 같은 기기에서 다시 열면 이어서 관리할 수 있습니다.
+                                </div>
+
+                                {/* Teacher Grid */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    {roomData.menus.map((menu, idx) => {
+                                        const members = getMembers(roomData, idx);
+                                        const isFull = members.length >= menu.limit;
+                                        return (
+                                            <div key={idx} className="teacher-result-card rounded-2xl border-2 border-slate-200 p-5 bg-white shadow-sm">
+                                                <div className="flex items-start justify-between gap-2 mb-3">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-4xl p-2 bg-slate-50 rounded-2xl border border-slate-100">{menu.emoji}</div>
+                                                        <div>
+                                                            <h3 className="font-bold text-slate-800 text-base">{menu.name}</h3>
+                                                            <span className="text-xs font-semibold text-slate-500">정원: {menu.limit}명</span>
+                                                        </div>
+                                                    </div>
+                                                    <span className={`text-xs font-extrabold px-2.5 py-1 rounded-full ${isFull ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                        {members.length} / {menu.limit}명
+                                                    </span>
+                                                </div>
+                                                <div className="mt-4 pt-3 border-t border-slate-100 min-h-[100px]">
+                                                    <div className="text-xs text-slate-400 font-bold mb-2">선택한 학생 ({members.length}) · 선택 순</div>
+                                                    {members.length === 0 ? (
+                                                        <p className="text-xs text-slate-300 italic py-2">아직 선택한 학생이 없습니다.</p>
+                                                    ) : (
+                                                        <div className="flex flex-wrap gap-1.5">
+                                                            {members.map((m) => (
+                                                                <span key={m.uid} className="student-name text-xs pl-2.5 pr-1 py-1 rounded-lg font-medium flex items-center gap-1 bg-slate-100 text-slate-700">
+                                                                    <select value={m.menuIndex} onChange={(e) => handleMoveParticipant(m.uid, Number(e.target.value))} className="max-w-[8rem] bg-transparent font-semibold focus:outline-none" title="다른 모둠으로 이동">
+                                                                        {roomData.menus.map((option, optionIndex) => <option key={optionIndex} value={optionIndex}>{m.name} · {option.name}</option>)}
+                                                                    </select>
+                                                                    <button
+                                                                        onClick={() => handleRemoveParticipant(m.uid)}
+                                                                        title="선택 취소"
+                                                                        className="ml-0.5 w-4 h-4 leading-none rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                                                    >
+                                                                        ×
+                                                                    </button>
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    <button onClick={() => handleAddParticipant(idx)} className="mt-3 text-xs font-bold text-orange-700 hover:text-orange-900">＋ 학생 직접 추가</button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {!online && (
+                                    <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl px-4 py-3 leading-relaxed">
+                                        <div className="font-bold">인터넷 연결이 끊겨 다시 연결하는 중입니다. 연결되면 자동으로 이어집니다.</div>
+                                        <div className="mt-1">내 선택은 서버에 그대로 저장되어 있어요.</div>
+                                    </div>
+                                )}
+                                {/* Student Banner */}
+                                <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 rounded-2xl p-6 text-white shadow-md">
+                                    <div className="inline-block bg-white/20 backdrop-blur-sm text-xs px-3 py-1 rounded-full font-bold mb-2">
+                                        {isRevealed ? "📢 모둠 결과 발표!" : viewData.isLocked ? "🔒 모둠 선택 마감됨" : "🟢 모둠 선택 진행 중"}
+                                    </div>
+                                    <h2 className="text-2xl font-black">{viewData.title}</h2>
+                                    <p className="text-xs text-white/80 mt-1">
+                                        {isRevealed
+                                            ? "선생님이 모둠 결과를 공개했어요. 우리 모둠 친구들을 확인해 보세요!"
+                                            : viewData.isLocked
+                                                ? "선택이 마감되었어요. 선생님이 결과를 공개하면 이 화면에 모둠 명단이 나타납니다."
+                                                : `내가 좋아하는 메뉴를 선택해 모둠원이 되어보세요! (${viewData.menus.length}개 메뉴)`}
+                                    </p>
+                                </div>
+
+                                {!viewData.selectionOpen ? (
+                                    <div className="bg-white rounded-3xl border-2 border-sky-200 shadow-sm p-10 text-center">
+                                        <div className="text-6xl mb-4">⏳</div>
+                                        <h3 className="text-2xl font-black text-slate-800">선생님이 준비 중이에요</h3>
+                                        <p className="text-sm text-slate-500 mt-3">친구들이 모두 들어올 때까지 잠시 기다려 주세요.<br />선생님이 <strong>선택 시작</strong>을 누르면 모둠을 고를 수 있습니다.</p>
+                                        <div className="mt-5 inline-flex items-center gap-2 rounded-full bg-sky-50 px-4 py-2 text-xs font-bold text-sky-700">방에 입장 완료 · 자동 확인 중</div>
+                                    </div>
+                                ) : isRevealed ? (
+                                    <div className="space-y-6">
+                                        <div className={`rounded-2xl p-5 border-2 ${myMenuIndex !== null ? 'bg-emerald-50 border-emerald-300' : 'bg-slate-50 border-slate-200'}`}>
+                                            {myMenuIndex !== null ? (
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-5xl">{viewData.menus[myMenuIndex].emoji}</span>
+                                                    <div>
+                                                        <div className="text-xs font-bold text-emerald-600">{myEntry.name} 님의 모둠</div>
+                                                        <div className="text-2xl font-black text-emerald-800">{viewData.menus[myMenuIndex].name}</div>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm font-bold text-slate-600">이 기기에서는 선택한 모둠이 없습니다. 선생님께 확인해 주세요.</p>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            {viewData.menus.map((menu, idx) => {
+                                                const members = getMembers(viewData, idx);
+                                                const isMine = myMenuIndex === idx;
+                                                return (
+                                                    <div key={idx} className={`rounded-2xl border-2 p-5 bg-white ${isMine ? 'border-orange-500 ring-2 ring-orange-200 shadow-md' : 'border-slate-200 shadow-sm'}`}>
+                                                        <div className="flex items-center gap-3 mb-3">
+                                                            <div className="text-4xl p-2 bg-slate-50 rounded-2xl border border-slate-100">{menu.emoji}</div>
+                                                            <div>
+                                                                <h3 className="font-bold text-slate-800 text-base">{menu.name} {isMine && <span className="text-xs text-orange-600">· 우리 모둠</span>}</h3>
+                                                                <span className="text-xs font-semibold text-slate-500">{members.length}명</span>
+                                                            </div>
+                                                        </div>
+                                                        <div className="pt-3 border-t border-slate-100 min-h-[80px]">
+                                                            {members.length === 0 ? (
+                                                                <p className="text-xs text-slate-300 italic py-2">모둠원이 없습니다.</p>
+                                                            ) : (
+                                                                <div className="flex flex-wrap gap-1.5">
+                                                                    {members.map((m) => (
+                                                                        <span
+                                                                            key={m.uid}
+                                                                            className={`text-xs px-2.5 py-1 rounded-lg font-medium ${m.uid === user.uid ? 'bg-orange-500 text-white font-bold shadow-sm' : 'bg-slate-100 text-slate-700'}`}
+                                                                        >
+                                                                            {m.uid === user.uid && '⭐ '}
+                                                                            {m.name}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {/* Student Input Card */}
+                                        <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+                                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                                <div className="flex-1 w-full sm:w-auto">
+                                                    <label className="block text-xs font-bold text-slate-500 mb-1">내 이름 또는 학번</label>
+                                                    <input
+                                                        type="text"
+                                                        value={studentName}
+                                                        onChange={(e) => setStudentName(e.target.value)}
+                                                        disabled={viewData.isLocked}
+                                                        maxLength={20}
+                                                        placeholder="예: 홍길동 (또는 10101)"
+                                                        className="w-full sm:max-w-xs px-4 py-2 rounded-xl border border-slate-300 focus:ring-2 focus:ring-orange-500 focus:outline-none text-sm font-semibold disabled:bg-slate-100"
+                                                    />
+                                                </div>
+
+                                                {myMenuIndex !== null && (
+                                                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-4 py-3 rounded-xl flex items-center gap-3 w-full sm:w-auto">
+                                                        <span className="text-2xl">{viewData.menus[myMenuIndex].emoji}</span>
+                                                        <div>
+                                                            <div className="text-xs font-medium text-emerald-600">현재 선택한 모둠</div>
+                                                            <div className="font-bold text-sm">{viewData.menus[myMenuIndex].name}</div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-sky-50 border border-sky-200 text-sky-800 text-xs rounded-xl px-4 py-3">
+                                            🙈 다른 친구들이 어떤 모둠을 골랐는지는 선생님이 결과를 공개할 때까지 볼 수 없어요. 친구 눈치 보지 말고 내가 원하는 모둠을 골라 보세요!
+                                        </div>
+
+                                        {/* Menu Selection Grid */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                            {viewData.menus.map((menu, idx) => {
+                                                const isMySelection = myMenuIndex === idx;
+                                                const isFull = !!(viewData.fullMenus && viewData.fullMenus[idx]) && !isMySelection;
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        className={`rounded-2xl border-2 transition-all p-5 flex flex-col justify-between bg-white relative overflow-hidden ${
+                                                            isMySelection
+                                                                ? 'border-orange-500 ring-2 ring-orange-200 shadow-md'
+                                                                : 'border-slate-200 hover:border-slate-300 shadow-sm'
+                                                        }`}
+                                                    >
+                                                        <div className="flex items-start justify-between gap-2">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="text-4xl p-2 bg-slate-50 rounded-2xl border border-slate-100">{menu.emoji}</div>
+                                                                <div>
+                                                                    <h3 className="font-bold text-slate-800 text-base">{menu.name}</h3>
+                                                                    <span className="text-xs font-semibold text-slate-500">정원: {menu.limit}명</span>
+                                                                </div>
+                                                            </div>
+                                                            <span className={`text-xs font-extrabold px-2.5 py-1 rounded-full whitespace-nowrap ${
+                                                                isMySelection
+                                                                    ? 'bg-orange-100 text-orange-700'
+                                                                    : isFull
+                                                                        ? 'bg-rose-100 text-rose-700'
+                                                                        : 'bg-emerald-100 text-emerald-700'
+                                                            }`}>
+                                                                {isMySelection ? '내 선택' : isFull ? '정원 마감' : '선택 가능'}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="mt-5 pt-3">
+                                                            <button
+                                                                onClick={() => handleJoinMenu(idx)}
+                                                                disabled={loading || viewData.isLocked || isFull}
+                                                                className={`w-full py-2.5 rounded-xl font-bold text-xs transition shadow-sm ${
+                                                                    isMySelection
+                                                                        ? 'bg-orange-600 text-white hover:bg-orange-700'
+                                                                        : isFull || viewData.isLocked
+                                                                            ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                                                                            : 'bg-slate-800 text-white hover:bg-slate-900'
+                                                                }`}
+                                                            >
+                                                                {isMySelection
+                                                                    ? (viewData.isLocked ? '✅ 내 모둠' : '✅ 내 모둠 선택됨 (다른 모둠으로 변경 가능)')
+                                                                    : isFull
+                                                                        ? '🚫 정원 마감'
+                                                                        : viewData.isLocked
+                                                                            ? '🔒 선택 마감'
+                                                                            : `${menu.emoji} 이 모둠 선택하기`}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </main>
+
+                    <footer className="bg-white border-t border-slate-200 mt-auto py-4 text-center text-xs text-slate-400">
+                        <p>맛있는 모둠 만들기 • 최대 {MAX_MENUS}개 메뉴 지정 & Firebase 실시간 연동 • 결과 공개 전 학생 간 선택 비공개</p>
+                    </footer>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
