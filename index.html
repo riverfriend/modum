@@ -1075,7 +1075,7 @@
                     .then(() => { if (okMsg) showToast(okMsg); })
                     .catch((e) => {
                         console.warn(e);
-                        showToast(`저장에 실패했습니다. ${firebaseErrorText(e)}`, "error");
+                        showToast(`저장에 실패했습니다. ${firebaseErrorText(e)}${e && e.message ? ` (${e.message})` : ''}`, "error");
                     });
             };
 
